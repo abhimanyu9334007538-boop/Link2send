@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Premium P2P Share</title>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        :root { --primary: #6366f1; --secondary: #a855f7; --accent: #00f2fe; --bg-color: #050505; --glass-bg: rgba(255, 255, 255, 0.03); --glass-border: rgba(255, 255, 255, 0.1); }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        body, html { width: 100vw; height: 100vh; background-color: var(--bg-color); color: #ffffff; display: flex; justify-content: center; align-items: center; overflow: hidden; position: fixed; }
+        
+        .blob { position: absolute; border-radius: 50%; filter: blur(80px); z-index: 0; opacity: 0.4; animation: float 10s infinite alternate; }
+        .blob-1 { width: 300px; height: 300px; background: var(--primary); top: -10%; left: -10%; }
+        .blob-2 { width: 400px; height: 400px; background: var(--secondary); bottom: -10%; right: -10%; }
+        @keyframes float { from { transform: translate(0,0); } to { transform: translate(30px, 50px); } }
+        
+        .glass-panel { background: var(--glass-bg); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); border: 1px solid var(--glass-border); border-radius: 32px; padding: 35px; width: 90%; max-width: 420px; text-align: center; z-index: 10; box-shadow: 0 25px 50px rgba(0,0,0,0.6); position: relative; max-height: 90vh; overflow-y: auto; }
+        h1 { font-size: 24px; margin-bottom: 8px; background: linear-gradient(to right, #818cf8, #4ade80); -webkit-background-clip: text; color: transparent; }
+        p.subtitle { color: #94a3b8; font-size: 13px; margin-bottom: 25px; }
+        
+        .upload-box { border: 2px dashed rgba(255,255,255,0.15); border-radius: 24px; padding: 40px 20px; cursor: pointer; transition: 0.3s; position: relative; background: rgba(255,255,255,0.02); }
+        .upload-box.disabled { opacity: 0.5; pointer-events: none; }
+        .upload-box:hover:not(.disabled) { border-color: var(--primary); background: rgba(99, 102, 241, 0.05); }
+        .upload-box i { font-size: 50px; color: var(--primary); margin-bottom: 15px; }
+        input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+        
+        /* Status Text and Animations */
+        .status-container { margin-top: 20px; padding: 15px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); display: none; }
+        .status-text { font-size: 14px; font-weight: 500; color: #e2e8f0; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.2); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .result-area { display: none; animation: slideUp 0.5s ease; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .qr-box { background: #fff; padding: 12px; border-radius: 18px; display: inline-block; margin: 15px 0; }
+        .qr-box img { width: 130px; height: 130px; display: block; }
+        .link-wrapper { display: flex; background: rgba(0,0,0,0.4); border: 1px solid var(--glass-border); border-radius: 12px; padding: 8px 12px; align-items: center; }
+        .link-wrapper input { background: transparent; border: none; color: #cbd5e1; font-size: 15px; width: 100%; outline: none; }
+        .btn-copy { background: var(--primary); color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        .btn-copy:active { transform: scale(0.95); }
+        
+        .file-card { display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.05); padding: 16px; border-radius: 18px; margin-top: 15px; border: 1px solid var(--glass-border); }
+        .file-meta { display: flex; align-items: center; gap: 12px; text-align: left; overflow: hidden; }
+        .file-meta i { font-size: 28px; color: var(--accent); flex-shrink: 0; }
+        .file-name { font-weight: 500; font-size: 14px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #f8fafc; }
+        .btn-download { color: var(--accent); text-decoration: none; font-weight: 600; font-size: 14px; border: 1px solid var(--accent); padding: 6px 12px; border-radius: 8px; transition: 0.3s; flex-shrink: 0; cursor: pointer; display: inline-block;}
+        .btn-download:hover { background: var(--accent); color: #000; }
+    </style>
+</head>
+<body>
+
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+
+    <div class="glass-panel" id="sender-view" style="display: none;">
+        <h1>Direct Transfer</h1>
+        <p class="subtitle">No Size Limits. Share directly via WebRTC.</p>
+
+        <div class="upload-box disabled" id="drop-zone">
+            <i class="ph ph-rocket-launch"></i>
+            <p id="upload-instruction">Initializing Network...</p>
+            <input type="file" id="file-input" disabled>
+        </div>
+
+        <div class="status-container" id="sender-status-box">
+            <div class="status-text">
+                <div class="spinner" id="sender-spinner"></div>
+                <span id="sender-status">Waiting for receiver...</span>
+            </div>
+        </div>
+
+        <div class="result-area" id="result-area">
+            <p style="font-size: 13px; color: #fbbf24; margin-top: 10px;">⚠️ Do not close this tab until file is received.</p>
+            <div class="qr-box">
+                <img id="qr-img" src="" alt="QR Code">
+            </div>
+            <div class="link-wrapper">
+                <input type="text" id="share-url" readonly>
+                <button class="btn-copy" id="copy-btn">Copy</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="glass-panel" id="receiver-view" style="display: none;">
+        <h1>Receiving File</h1>
+        <p class="subtitle">Secure Direct Connection</p>
+        
+        <div class="status-container" id="receiver-status-box" style="display: block;">
+            <div class="status-text">
+                <div class="spinner" id="receiver-spinner"></div>
+                <span id="receiver-status">Connecting to Sender...</span>
+            </div>
+        </div>
+
+        <div id="file-list" style="display: none;">
+            <div class="file-card">
+                <div class="file-meta">
+                    <i class="ph ph-file-zip"></i>
+                    <div>
+                        <p class="file-name" id="rx-filename">filename.zip</p>
+                        <small style="color:#94a3b8" id="rx-filesize">0 MB</small>
+                    </div>
+                </div>
+                <a id="rx-download-btn" class="btn-download">Save</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const receiverPeerId = urlParams.get('peer');
+
+        // Initialize PeerJS
+        const peer = new Peer(); 
+        let myPeerId = null;
+        let selectedFile = null;
+
+        // UI Elements - Sender
+        const senderView = document.getElementById('sender-view');
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const uploadInstruction = document.getElementById('upload-instruction');
+        const resultArea = document.getElementById('result-area');
+        const senderStatusBox = document.getElementById('sender-status-box');
+        const senderStatus = document.getElementById('sender-status');
+        const senderSpinner = document.getElementById('sender-spinner');
+
+        // UI Elements - Receiver
+        const receiverView = document.getElementById('receiver-view');
+        const receiverStatusBox = document.getElementById('receiver-status-box');
+        const receiverStatus = document.getElementById('receiver-status');
+        const receiverSpinner = document.getElementById('receiver-spinner');
+        const fileList = document.getElementById('file-list');
+        const rxFilename = document.getElementById('rx-filename');
+        const rxFilesize = document.getElementById('rx-filesize');
+        const rxDownloadBtn = document.getElementById('rx-download-btn');
+
+        // ----------------- SENDER LOGIC -----------------
+        if (!receiverPeerId) {
+            senderView.style.display = 'block';
+
+            peer.on('open', (id) => {
+                myPeerId = id;
+                dropZone.classList.remove('disabled');
+                fileInput.removeAttribute('disabled');
+                uploadInstruction.innerText = "Tap to Select Big File";
+            });
+
+            fileInput.addEventListener('change', (e) => {
+                if(e.target.files.length > 0) {
+                    selectedFile = e.target.files[0];
+                    dropZone.style.display = 'none';
+                    resultArea.style.display = 'block';
+                    senderStatusBox.style.display = 'block';
+                    
+                    const shareLink = `${window.location.origin}${window.location.pathname}?peer=${myPeerId}`;
+                    document.getElementById('share-url').value = shareLink;
+                    document.getElementById('qr-img').src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(shareLink)}`;
+                }
+            });
+
+            // When Receiver scans the QR and connects
+            peer.on('connection', (conn) => {
+                senderStatus.innerText = "Receiver Connected! Sending file...";
+                resultArea.style.display = 'none'; // Hide QR code
+                
+                conn.on('open', () => {
+                    // Send file metadata first, then the file blob
+                    conn.send({
+                        type: 'file',
+                        file: selectedFile,
+                        name: selectedFile.name,
+                        size: selectedFile.size
+                    });
+                    
+                    senderSpinner.style.display = 'none';
+                    senderStatus.innerText = "File Sent Successfully! 🎉";
+                    senderStatus.style.color = "#4ade80";
+                });
+            });
+
+            document.getElementById('copy-btn').addEventListener('click', () => {
+                document.getElementById('share-url').select();
+                document.execCommand('copy');
+                document.getElementById('copy-btn').innerText = "Saved!";
+                setTimeout(() => document.getElementById('copy-btn').innerText = "Copy", 2000);
+            });
+        } 
+        
+        // ----------------- RECEIVER LOGIC -----------------
+        else {
+            receiverView.style.display = 'block';
+
+            peer.on('open', () => {
+                receiverStatus.innerText = "Connecting to Sender...";
+                
+                const conn = peer.connect(receiverPeerId);
+                
+                conn.on('open', () => {
+                    receiverStatus.innerText = "Connected! Waiting for file transfer...";
+                });
+
+                conn.on('data', (data) => {
+                    if (data.type === 'file') {
+                        receiverStatusBox.style.display = 'none';
+                        fileList.style.display = 'block';
+                        
+                        rxFilename.innerText = data.name;
+                        rxFilename.title = data.name;
+                        rxFilesize.innerText = (data.size / 1024 / 1024).toFixed(2) + " MB";
+
+                        // Create Downloadable Blob URL
+                        const blob = new Blob([data.file]);
+                        const url = URL.createObjectURL(blob);
+                        
+                        rxDownloadBtn.href = url;
+                        rxDownloadBtn.download = data.name;
+                    }
+                });
+
+                conn.on('error', (err) => {
+                    receiverSpinner.style.display = 'none';
+                    receiverStatus.innerText = "Connection lost or Sender closed tab.";
+                    receiverStatus.style.color = "#ef4444";
+                });
+            });
+        }
+    </script>
+</body>
+  </html>
+  
